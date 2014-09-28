@@ -233,11 +233,11 @@ void average(vector<Mat1s>& frames, Mat1s& mean) {
 int main() {
 
 	const unsigned int nBackgroundTrain = 30;	// サンプリング回数
-	int touchDepthMin = 10;	// タッチ判定の最小値
-	int touchDepthMax = 20;	// タッチ判定の最大値
+	int touchDepthMin = 10;	// タッチ判定の最小値(defautl:10)
+	int touchDepthMax = 20;	// タッチ判定の最大値(default:20)
 	int touchMinArea = 50;		// このエリアよりも輪郭が大きいなら、タッチ箇所とみなす
 
-	const bool localClientMode = true; 		// connect to a local client
+	const bool localClientMode = false; 		// connect to a local client
 
 	const double debugFrameMaxDepth = 4000;		// maximal distance (in millimeters) for 8 bit debug depth frame quantization. 4000mm === 4m
 	const char* windowName = "TouchReader";			// ウィンドウ名
@@ -272,7 +272,7 @@ int main() {
 	// TUIO server object
 	TuioServer* tuio;
 	if (localClientMode) {
-		printf("connect \"LOCAL\"TuioServer\n");
+		printf("connect \"LOCAL\" TuioServer\n");
 		tuio = new TuioServer();
 	} else {
 		printf("connect TuioServer 150.43.77.24:3333\n");
@@ -343,16 +343,21 @@ int main() {
 		tuio->initFrame(time);
 
 		for (unsigned int i = 0; i < touchPoints.size(); i++) { // touch points
-				float cursorX = (touchPoints[i].x - xMin) / (xMax - xMin);
-				float cursorY = 1 - (touchPoints[i].y - yMin)/(yMax - yMin);
+				//float cursorX2 = (touchPoints[i].x - xMin) / (xMax - xMin);
+				float cursorX = 1- (touchPoints[i].x - xMin) / (xMax - xMin);
+				//float cursorY2 = 1 - (touchPoints[i].y - yMin)/(yMax - yMin);
+				float cursorY = (touchPoints[i].y - yMin)/(yMax - yMin);
+				cursorY = 1 - (touchPoints[i].y - yMin)/(yMax - yMin);//安東さん用
 				TuioCursor* cursor = tuio->getClosestTuioCursor(cursorX,cursorY);
 				// TODO improve tracking (don't move cursors away, that might be closer to another touch point)
 				if (cursor == NULL || cursor->getTuioTime() == time) {
 					tuio->addTuioCursor(cursorX, cursorY);
 					//printf("addTuioCursor TuioServer(%f, %f)\n", cursorX, cursorY);
+					//printf("addTuioCursor TuioServer(%f, %f)2\n", cursorX, cursorY2);
 				} else {
 					tuio->updateTuioCursor(cursor, cursorX, cursorY);
 					//printf("updateTuioCursor TuioServer(%f, %f)\n", cursorX, cursorY);
+					//printf("updateTuioCursor TuioServer(%f, %f)2\n", cursorX, cursorY2);
 				}
 		}
 
