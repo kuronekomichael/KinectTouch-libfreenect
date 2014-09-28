@@ -56,7 +56,7 @@ int die = 0;
 pthread_t freenect_thread;
 freenect_context *f_ctx;
 freenect_device *f_dev;
-uchar depth_mid[640*480], depth_front[640*480];
+ushort depth_mid[640*480], depth_front[640*480];
 int got_depth = 0;
 pthread_mutex_t gl_backbuf_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t gl_frame_cond = PTHREAD_COND_INITIALIZER;
@@ -75,26 +75,17 @@ bool mousePressed = false;
 //---------------------------------------------------------------------------
 
 #ifdef FREENECT
-uchar tMax = 0, tMin = 99999999;
 void depth_cb(freenect_device *dev, void *v_depth, uint32_t timestamp)
 {
 	int i;
 	pthread_mutex_lock(&gl_backbuf_mutex);
 	pthread_cond_init(&gl_frame_cond, NULL);
-	uchar *depth = (uchar*)v_depth;
+	ushort *depth = (ushort*)v_depth;
 
 	for (i = 0; i < 640*480; i++) {
 		depth_mid[i] = depth[i];
-		if (tMax < depth[i]) {
-			tMax = depth[i];
-		}
-		if (tMin > depth[i]) {
-			tMin = depth[i];
-		}
 	}
 	got_depth++;
-
-	//printf("tMin = %d, tMax = %d", tMin, tMax);
 
 	pthread_cond_signal(&gl_frame_cond);
 	pthread_mutex_unlock(&gl_backbuf_mutex);
@@ -183,23 +174,20 @@ int initKinnect() {
 	return 0;
 }
 void updateKinnect() {
-	// depthが取れるまで待ち
-	while (!got_depth) {
-			pthread_cond_wait(&gl_frame_cond, &gl_backbuf_mutex);
-	}
+	//while (!got_depth) {
+	//		pthread_cond_wait(&gl_frame_cond, &gl_backbuf_mutex);
+	//}
 }
 uchar* getKinnectDepthMap() {
 	int i;
 	pthread_mutex_lock(&gl_backbuf_mutex);
-	got_depth = 0;
 	for (i = 0; i < 640*480; i++) {
 		depth_front[i] = depth_mid[i];
 	}
+	got_depth = 0;
 	pthread_mutex_unlock(&gl_backbuf_mutex);
 
-	printf("tMin = %d, tMax = %d", tMin, tMax);
-
-	return depth_front;
+	return (uchar *)depth_front;
 }
 #else
 int initKinnect() {
@@ -223,7 +211,7 @@ int initKinnect() {
 void updateKinnect() {
 	xnContext.WaitAndUpdateAll();
 }
-uchar* getKinnectDepthMap() {
+ushort* getKinnectDepthMap() {
 	return (uchar*) xnDepthGenerator.GetDepthMap();
 }
 #endif
@@ -245,22 +233,22 @@ void average(vector<Mat1s>& frames, Mat1s& mean) {
 int main() {
 
 	const unsigned int nBackgroundTrain = 30;	// サンプリング回数
-	const unsigned short touchDepthMin = 10;	// タッチ判定の最小値
-	const unsigned short touchDepthMax = 20;	// タッチ判定の最大値
-	const unsigned int touchMinArea = 50;		// このエリアよりも輪郭が大きいなら、タッチ箇所とみなす
+	int touchDepthMin = 10;	// タッチ判定の最小値
+	int touchDepthMax = 20;	// タッチ判定の最大値
+	int touchMinArea = 50;		// このエリアよりも輪郭が大きいなら、タッチ箇所とみなす
 
-	const bool localClientMode = false; 		// connect to a local client
+	const bool localClientMode = true; 		// connect to a local client
 
 	const double debugFrameMaxDepth = 4000;		// maximal distance (in millimeters) for 8 bit debug depth frame quantization. 4000mm === 4m
-	const char* windowName = "Debug";			// ウィンドウ名
+	const char* windowName = "TouchReader";			// ウィンドウ名
 	const Scalar debugColor0(0, 0, 128);		// タッチ近似領域の色：Scalr(Blue, Green, Red) === (0x800000) === red
 	const Scalar debugColor1(255, 0, 0);		// ROIを囲む枠線の色
 	const Scalar debugColor2(255, 255, 255);	// タッチの色
 
-	int xMin = 110;
-	int xMax = 560;
-	int yMin = 120;
-	int yMax = 320;
+	const int xMin = 0;
+	const int xMax = 640;
+	const int yMin = 00;
+	const int yMax = 480;
 
 	Mat1s depth(480, 640);		// 16 bit depth (in millimeters) <Mat1s === short>
 	Mat1b depth8(480, 640);		// 8 bit depth <Mat1b === uchar>
@@ -284,19 +272,26 @@ int main() {
 	// TUIO server object
 	TuioServer* tuio;
 	if (localClientMode) {
+		printf("connect \"LOCAL\"TuioServer\n");
 		tuio = new TuioServer();
 	} else {
 		printf("connect TuioServer 150.43.77.24:3333\n");
-		tuio = new TuioServer("150.43.77.24", 3333, false);
+		tuio = new TuioServer("150.43.74.5", 3333, false);			// 安東さん
+		//tuio = new TuioServer("150.43.77.24", 3333, false);		// 龍さん
 	}
 	TuioTime time;
 
 	// create some sliders
 	namedWindow(windowName);
+/*
 	createTrackbar("xMin", windowName, &xMin, 640);
 	createTrackbar("xMax", windowName, &xMax, 640);
 	createTrackbar("yMin", windowName, &yMin, 480);
 	createTrackbar("yMax", windowName, &yMax, 480);
+//*/
+	createTrackbar("touchDepthMin", windowName, &touchDepthMin, 100);
+	createTrackbar("touchDepthMax", windowName, &touchDepthMax, 100);
+	createTrackbar("touchMinArea", windowName, &touchMinArea, 100);
 
 	// create background model (average depth)
 	for (unsigned int i=0; i<nBackgroundTrain; i++) {
@@ -347,17 +342,17 @@ int main() {
 		time = TuioTime::getSessionTime();
 		tuio->initFrame(time);
 
-		for (unsigned int i=0; i<touchPoints.size(); i++) { // touch points
+		for (unsigned int i = 0; i < touchPoints.size(); i++) { // touch points
 				float cursorX = (touchPoints[i].x - xMin) / (xMax - xMin);
 				float cursorY = 1 - (touchPoints[i].y - yMin)/(yMax - yMin);
 				TuioCursor* cursor = tuio->getClosestTuioCursor(cursorX,cursorY);
 				// TODO improve tracking (don't move cursors away, that might be closer to another touch point)
 				if (cursor == NULL || cursor->getTuioTime() == time) {
-					tuio->addTuioCursor(cursorX,　cursorY);
-					printf("addTuioCursor TuioServer(%f, %f)\n", cursorX,　cursorY);
+					tuio->addTuioCursor(cursorX, cursorY);
+					//printf("addTuioCursor TuioServer(%f, %f)\n", cursorX, cursorY);
 				} else {
 					tuio->updateTuioCursor(cursor, cursorX, cursorY);
-					printf("updateTuioCursor TuioServer(%f, %f)\n", cursorX,　cursorY);
+					//printf("updateTuioCursor TuioServer(%f, %f)\n", cursorX, cursorY);
 				}
 		}
 
@@ -368,17 +363,15 @@ int main() {
 		//--------------------
 		// draw debug frame
 		//--------------------
-/*
-	Mat1s depth(480, 640);		// 16 bit depth (in millimeters) <Mat1s === short>
-	Mat1b depth8(480, 640);		// 8 bit depth <Mat1b === uchar>
-	Mat3b debug(480, 640);		// debug visualization
-*/
 		// render depth to debug frame
-		// 行列をスケーリングして別のデータ型に変換 cvConvertScale を参照してください．
-		depth.convertTo(depth8, CV_8U/* 0〜255 */, 255 / debugFrameMaxDepth);
-		cvtColor(/* 入力画像 */depth8, /* 出力画像 */debug, /* 変換方法 */CV_GRAY2BGR);
+		depth.convertTo(depth8, CV_8U, 255 / debugFrameMaxDepth);
+		cvtColor(/* in */depth8, /* out*/debug, /* 変換方法 */CV_GRAY2BGR);
+
+		// ヒートマップの描画
 		debug.setTo(debugColor0, touch);  // touch mask
-		rectangle(debug, roi, debugColor1, 2); // surface boundaries
+		//rectangle(debug, roi, debugColor1, 2); // surface boundaries
+
+		// タッチ位置の描画
 		for (unsigned int i = 0; i < touchPoints.size(); i++) { // touch points
 			circle(debug, touchPoints[i], 5, debugColor2, CV_FILLED);
 		}
@@ -391,6 +384,9 @@ int main() {
 	sleep(1);
 
 	printf("main thread finished.\n");
+	printf("\ttouchDepthMin = %d\n", touchDepthMin);
+	printf("\ttouchDepthMax = %d\n", touchDepthMax);
+	printf("\ttouchMinArea = %d\n", touchMinArea);
 
 	return 0;
 }
