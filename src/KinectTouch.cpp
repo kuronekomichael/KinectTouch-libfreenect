@@ -112,7 +112,6 @@ void *freenect_threadfunc(void *arg)
 }
 
 int initKinnect() {
-	int ret = 0;
 	// setup
 	if (freenect_init(&f_ctx, NULL) < 0) {
 	  printf("freenect_init() failed\n");
@@ -213,7 +212,7 @@ int main() {
 	const unsigned short touchDepthMax = 20;
 	const unsigned int touchMinArea = 50;	// 最小タッチエリアよりも大きいなら、タッチ箇所とみなす
 
-	const bool localClientMode = true; 					// connect to a local client
+	const bool localClientMode = false; 					// connect to a local client
 
 	const double debugFrameMaxDepth = 4000; // maximal distance (in millimeters) for 8 bit debug depth frame quantization
 	const char* windowName = "Debug";
@@ -242,7 +241,7 @@ int main() {
 
 	if (initKinnect() != 0) {
 			printf("initKinnect Error\n");
-			exit;
+			return -1;
 	}
 
 	// TUIO server object
@@ -250,6 +249,7 @@ int main() {
 	if (localClientMode) {
 		tuio = new TuioServer();
 	} else {
+		printf("connect TuioServer 150.43.77.24:3333\n");
 		tuio = new TuioServer("150.43.77.24", 3333, false);
 	}
 	TuioTime time;
@@ -317,8 +317,10 @@ int main() {
 				// TODO improve tracking (don't move cursors away, that might be closer to another touch point)
 				if (cursor == NULL || cursor->getTuioTime() == time) {
 					tuio->addTuioCursor(cursorX,　cursorY);
+					printf("addTuioCursor TuioServer(%f, %f)\n", cursorX,　cursorY);
 				} else {
 					tuio->updateTuioCursor(cursor, cursorX, cursorY);
+					printf("updateTuioCursor TuioServer(%f, %f)\n", cursorX,　cursorY);
 				}
 		}
 
